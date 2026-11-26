@@ -14,13 +14,17 @@ final class CameraModel: ObservableObject {
     /// Keep the picture upright by following how the phone is held.
     @Published private(set) var autoRotate = true
     /// How the phone is physically held, from the motion sensors.
-    @Published private(set) var heldOrientation: UIDeviceOrientation = .landscapeLeft
+    @Published private(set) var heldOrientation: UIDeviceOrientation = .portrait
+
+    /// Quality steps offered by the phone UI (the Windows app uses the same three).
+    static let qualitySteps: [(label: String, value: Double)] = [("Low", 0.4), ("Medium", 0.6), ("High", 0.8)]
 
     let streamer = CameraStreamer()
     let server = StreamServer()
 
     private let motion = CMMotionManager()
     private var started = false
+    private var hasMotionReading = false
 
     init() {
         let server = self.server
@@ -82,6 +86,23 @@ final class CameraModel: ObservableObject {
         sendStatus()
     }
 
+    var qualityIndex: Int {
+        let steps = Self.qualitySteps
+        return steps.indices.min { abs(steps[$0].value - quality) < abs(steps[$1].value - quality) } ?? 1
+    }
+
+    func cycleQuality() {
+        setQuality(Self.qualitySteps[(qualityIndex + 1) % Self.qualitySteps.count].value)
+    }
+
+    func toggleCamera() {
+        select(position == .front ? .back : .front)
+    }
+
+    func toggleResolution() {
+        select(resolution: resolution == .hd720 ? .hd1080 : .hd720)
+    }
+
     func setAutoRotate(_ on: Bool) {
         guard on != autoRotate else { return }
         autoRotate = on
@@ -114,7 +135,9 @@ final class CameraModel: ObservableObject {
         } else {
             return
         }
-        guard held != heldOrientation else { return }
+        // The camera starts in its native orientation, so always apply the first reading.
+        guard held != heldOrientation || !hasMotionReading else { return }
+        hasMotionReading = true
         heldOrientation = held
         applyRotation()
     }
