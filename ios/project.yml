@@ -13,12 +13,13 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cleesign.phonecam
         PRODUCT_NAME: PhoneCam
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""                              # set your Team ID, or pick it in Xcode
         MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: PhoneCam
         INFOPLIST_KEY_NSCameraUsageDescription: "PhoneCam sends the camera image to your computer over the USB cable."
