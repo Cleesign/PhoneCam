@@ -5,3 +5,4 @@ publish/
 .vs/
 ios/PhoneCam.xcodeproj/
 DerivedData/
+*.ipa
