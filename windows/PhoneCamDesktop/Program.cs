@@ -11,6 +11,8 @@ internal static class Program
         NativeLibrary.SetDllImportResolver(typeof(Program).Assembly, SoftcamNative.Resolve);
 
         ApplicationConfiguration.Initialize();
+        using (var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero))
+            Ui.Scale = g.DpiX / 96f;
         Application.Run(new MainForm());
     }
 }

@@ -46,7 +46,7 @@ To rebuild softcam yourself (softcam publishes no prebuilt binaries): clone `htt
 
 The Windows app looks for `softcam.dll` in this order: the `SOFTCAM_DLL` environment variable, then the folder next to `PhoneCamDesktop.exe`, then `C:\Program Files\Softcam\softcam.dll`. A copy of `softcam.dll` placed in `windows/PhoneCamDesktop/` is also copied to the build output automatically.
 
-The Windows app is published to `windows/PhoneCamDesktop/publish/PhoneCamDesktop.exe`.
+The Windows app is published to `windows/PhoneCamDesktop/publish/PhoneCamDesktop.exe`. The app icon is `windows/PhoneCamDesktop/app.ico`. `tools/make-icons.ps1` redraws it, and the iPhone icon, from code.
 
 ---
 
@@ -90,6 +90,8 @@ In Xcode, go to *Signing & Capabilities* and pick your Team. Change the bundle i
 
 Tips:
 - **Auto-rotate** is on by default (on the phone and as *Follow phone rotation* in the Windows app). The phone reads its motion sensors (gyroscope and accelerometer) and turns the picture so you stay upright, whichever way it's held. The virtual webcam always stays 16:9 landscape: a portrait-held phone is cropped to the middle band (*Fill frame*) or shown with black side bars (*Fit whole image*). This works even with Portrait Orientation Lock on. When the phone lies flat, it keeps the last orientation.
+- **Watermark:** in the Windows app, turn on *Show watermark* and choose a PNG (transparency is kept) or JPG. Pick a corner or the centre, then set its size (5–60 % of the frame width) and opacity. It's drawn into the webcam picture itself, so everyone in the call sees it. It isn't affected by *Mirror*, but apps that mirror your own self-view will show it reversed to you only.
+- The Windows app remembers your choices in `%AppData%\PhoneCam\settings.json`.
 - Use **Extra rotation** only if the picture is still wrong, or when auto-rotate is off (then 0° suits a landscape mount with the back camera).
 - Leave **Mirror** off. Video-call apps mirror your self-view themselves, and other people see you the right way round.
 - The phone app has to stay **open and in the foreground**, because iOS stops the camera in the background. The screen stays on while streaming, and the phone charges over the same cable.
