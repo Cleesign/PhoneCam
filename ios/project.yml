@@ -1,0 +1,28 @@
+# XcodeGen spec — run `xcodegen generate` in this folder to create PhoneCam.xcodeproj
+name: PhoneCam
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  PhoneCam:
+    type: application
+    platform: iOS
+    sources: [PhoneCam]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cleesign.phonecam
+        PRODUCT_NAME: PhoneCam
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""                              # set your Team ID, or pick it in Xcode
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: PhoneCam
+        INFOPLIST_KEY_NSCameraUsageDescription: "PhoneCam sends the camera image to your computer over the USB cable."
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
