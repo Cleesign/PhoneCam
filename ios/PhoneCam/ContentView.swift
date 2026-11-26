@@ -58,6 +58,18 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
             }
 
+            Toggle(isOn: Binding(
+                get: { model.autoRotate },
+                set: { model.setAutoRotate($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-rotate").font(.headline)
+                    Text("Keeps the picture upright however you hold the phone")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Quality").font(.headline)
                 Slider(value: Binding(

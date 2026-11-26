@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMotion
 import SwiftUI
 import UIKit
 
@@ -10,10 +11,15 @@ final class CameraModel: ObservableObject {
     @Published private(set) var laptopConnected = false
     @Published private(set) var cameraAuthorized = false
     @Published private(set) var cameraError: String?
+    /// Keep the picture upright by following how the phone is held.
+    @Published private(set) var autoRotate = true
+    /// How the phone is physically held, from the motion sensors.
+    @Published private(set) var heldOrientation: UIDeviceOrientation = .landscapeLeft
 
     let streamer = CameraStreamer()
     let server = StreamServer()
 
+    private let motion = CMMotionManager()
     private var started = false
 
     init() {
@@ -40,6 +46,7 @@ final class CameraModel: ObservableObject {
         // Keep the phone awake while it's being used as a webcam.
         UIApplication.shared.isIdleTimerDisabled = true
         server.start()
+        startMotion()
 
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -75,6 +82,68 @@ final class CameraModel: ObservableObject {
         sendStatus()
     }
 
+    func setAutoRotate(_ on: Bool) {
+        guard on != autoRotate else { return }
+        autoRotate = on
+        applyRotation()
+    }
+
+    // MARK: - Orientation (gyroscope + accelerometer)
+
+    /// Device motion (gyroscope fused with the accelerometer) gives the direction of gravity.
+    /// This works even with Portrait Orientation Lock on, and while the app's UI stays portrait.
+    private func startMotion() {
+        guard motion.isDeviceMotionAvailable else { return }
+        motion.deviceMotionUpdateInterval = 0.1
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
+            guard let gravity = data?.gravity else { return }
+            let x = gravity.x, y = gravity.y, z = gravity.z
+            Task { @MainActor in self?.handleGravity(x: x, y: y, z: z) }
+        }
+    }
+
+    /// Gravity in device coordinates: +x = right edge, +y = top edge, +z = out of the screen.
+    private func handleGravity(x: Double, y: Double, z: Double) {
+        if abs(z) > 0.85 { return } // lying flat: keep the last orientation
+        let margin = 0.25            // dead zone around 45° so it doesn't flicker
+        let held: UIDeviceOrientation
+        if abs(x) > abs(y) + margin {
+            held = x < 0 ? .landscapeLeft : .landscapeRight   // top edge pointing left / right
+        } else if abs(y) > abs(x) + margin {
+            held = y < 0 ? .portrait : .portraitUpsideDown
+        } else {
+            return
+        }
+        guard held != heldOrientation else { return }
+        heldOrientation = held
+        applyRotation()
+    }
+
+    private func applyRotation() {
+        let videoOrientation: AVCaptureVideoOrientation
+        if !autoRotate {
+            videoOrientation = .landscapeRight // sensor native; rotate manually on Windows
+        } else {
+            switch heldOrientation {
+            case .portrait: videoOrientation = .portrait
+            case .portraitUpsideDown: videoOrientation = .portraitUpsideDown
+            case .landscapeRight: videoOrientation = .landscapeLeft  // device and video enums are mirrored
+            default: videoOrientation = .landscapeRight
+            }
+        }
+        streamer.setOrientation(videoOrientation)
+        sendStatus()
+    }
+
+    private var heldOrientationName: String {
+        switch heldOrientation {
+        case .portrait: return "portrait"
+        case .portraitUpsideDown: return "portraitUpsideDown"
+        case .landscapeRight: return "landscapeRight"
+        default: return "landscapeLeft"
+        }
+    }
+
     private func startCamera() {
         streamer.setQuality(quality)
         streamer.start(position: position, resolution: resolution) { [weak self] ok in
@@ -94,6 +163,9 @@ final class CameraModel: ObservableObject {
         if let q = command["quality"] as? Double {
             setQuality(q)
         }
+        if let on = command["autoRotate"] as? Bool {
+            setAutoRotate(on)
+        }
         if command["requestStatus"] != nil {
             sendStatus()
         }
@@ -105,6 +177,8 @@ final class CameraModel: ObservableObject {
             "resolution": resolution.rawValue,
             "quality": quality,
             "cameraAuthorized": cameraAuthorized,
+            "autoRotate": autoRotate,
+            "orientation": heldOrientationName,
             "error": cameraError ?? ""
         ])
     }

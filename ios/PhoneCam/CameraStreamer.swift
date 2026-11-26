@@ -19,9 +19,9 @@ enum StreamResolution: String, CaseIterable, Identifiable {
 
 /// Captures from the front or back camera and turns each frame into a JPEG.
 ///
-/// Frames are sent in the sensor's native landscape orientation and unmirrored.
-/// Rotation, mirroring and cropping are done on the Windows side, so the phone
-/// can sit in any stand.
+/// Frames are sent unmirrored. Their orientation follows `setOrientation`: CameraModel
+/// reads the motion sensors and asks AVFoundation to rotate the frames so the picture is
+/// upright however the phone is held. Cropping to 16:9 is done on the Windows side.
 final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
 
@@ -36,6 +36,8 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private var currentInput: AVCaptureDeviceInput?
+    /// Only touched on sessionQueue. landscapeRight is the sensor's native orientation.
+    private var orientation: AVCaptureVideoOrientation = .landscapeRight
 
     // Only touched on videoQueue.
     private var jpegQuality: CGFloat = 0.6
@@ -61,6 +63,24 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             }
             Task { @MainActor in completion(ok) }
         }
+    }
+
+    /// Rotates the outgoing frames so they come out upright for this orientation.
+    func setOrientation(_ newOrientation: AVCaptureVideoOrientation) {
+        sessionQueue.async {
+            guard newOrientation != self.orientation else { return }
+            self.orientation = newOrientation
+            self.applyOrientation()
+        }
+    }
+
+    /// Call on sessionQueue.
+    private func applyOrientation() {
+        guard let connection = videoOutput.connection(with: .video),
+              connection.isVideoOrientationSupported else { return }
+        // videoOrientation (rather than iOS 17's videoRotationAngle) because it accounts for
+        // the front and back camera facing opposite ways, and works on iOS 16.
+        connection.videoOrientation = orientation
     }
 
     func stop() {
@@ -104,6 +124,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = false
         }
+        applyOrientation() // the connection is new after switching camera
         return true
     }
 

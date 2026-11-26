@@ -47,6 +47,8 @@ internal sealed class MainForm : Form
     private readonly ComboBox _quality = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
     private readonly ComboBox _rotationBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
     private readonly CheckBox _mirrorBox = new() { Text = "Mirror image", AutoSize = true };
+    private readonly CheckBox _autoRotateBox = new() { Text = "Follow phone rotation (keeps you upright)", AutoSize = true, Checked = true };
+    private readonly Label _orientationLabel = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly ComboBox _fitBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
     private readonly ComboBox _outputSize = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
     private readonly Label _vcamStatus = new() { AutoSize = true, MaximumSize = new Size(300, 0) };
@@ -110,7 +112,9 @@ internal sealed class MainForm : Form
         panel.Controls.Add(_quality);
 
         panel.Controls.Add(Heading("Picture"));
-        panel.Controls.Add(SubLabel("Rotation"));
+        panel.Controls.Add(_autoRotateBox);
+        panel.Controls.Add(_orientationLabel);
+        panel.Controls.Add(SubLabel("Extra rotation (only if the picture is still wrong)"));
         _rotationBox.Items.AddRange(new object[] { "0°", "90°", "180°", "270°" });
         _rotationBox.SelectedIndex = 0;
         panel.Controls.Add(_rotationBox);
@@ -160,6 +164,7 @@ internal sealed class MainForm : Form
         _quality.SelectedIndexChanged += (_, _) =>
             SendToPhone("quality", Qualities[Math.Max(0, _quality.SelectedIndex)].Value);
 
+        _autoRotateBox.CheckedChanged += (_, _) => SendToPhone("autoRotate", _autoRotateBox.Checked);
         _rotationBox.SelectedIndexChanged += (_, _) => _rotation = _rotationBox.SelectedIndex * 90;
         _mirrorBox.CheckedChanged += (_, _) => _mirror = _mirrorBox.Checked;
         _fitBox.SelectedIndexChanged += (_, _) => _fill = _fitBox.SelectedIndex == 0;
@@ -188,9 +193,11 @@ internal sealed class MainForm : Form
             SendToPhone("camera", _frontCam.Checked ? "front" : "back");
             SendToPhone("resolution", (string)_phoneResolution.SelectedItem!);
             SendToPhone("quality", Qualities[Math.Max(0, _quality.SelectedIndex)].Value);
+            SendToPhone("autoRotate", _autoRotateBox.Checked);
         }
         else
         {
+            _orientationLabel.Text = "";
             lock (_pipelineLock) SendPlaceholder();
             SetPreview(null);
         }
@@ -219,6 +226,19 @@ internal sealed class MainForm : Form
                 for (int i = 1; i < Qualities.Length; i++)
                     if (Math.Abs(Qualities[i].Value - qv) < Math.Abs(Qualities[nearest].Value - qv)) nearest = i;
                 _quality.SelectedIndex = nearest;
+            }
+            if (status.TryGetProperty("autoRotate", out var ar) && ar.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                _autoRotateBox.Checked = ar.GetBoolean();
+            if (status.TryGetProperty("orientation", out var o))
+            {
+                _orientationLabel.Text = "Phone is held " + (o.GetString() switch
+                {
+                    "portrait" => "upright (portrait)",
+                    "portraitUpsideDown" => "upside down (portrait)",
+                    "landscapeLeft" => "sideways, top to the left",
+                    "landscapeRight" => "sideways, top to the right",
+                    _ => "—",
+                });
             }
             if (status.TryGetProperty("error", out var err) && !string.IsNullOrEmpty(err.GetString()))
                 _phoneStatus.Text = "iPhone: " + err.GetString();
