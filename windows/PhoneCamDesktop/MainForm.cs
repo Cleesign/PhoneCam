@@ -58,6 +58,21 @@ internal sealed class MainForm : Form
     private readonly Row _wmPositionRow;
     private readonly Row _wmSizeRow;
     private readonly Row _wmOpacityRow;
+    private readonly MicBridge _mic = new();
+    private readonly ToggleSwitch _micSwitch = new();
+    private readonly ToggleSwitch _noiseSwitch = new();
+    private readonly PillButton _micDevice = new();
+    private readonly LevelMeter _micLevel = new();
+    private readonly Note _micNote = new();
+    private readonly PillButton _getCable = new() { Text = "Get VB-CABLE (free)" };
+    private readonly Row _noiseRow;
+    private readonly Row _micDeviceRow;
+    private readonly Row _micLevelRow;
+    private readonly Row _getCableRow;
+    private string? _phoneMicError;
+    private int _cableCheckTick;
+    private readonly System.Windows.Forms.Timer _meterTimer = new() { Interval = 50 };
+
     private readonly Segmented _outputSize = new("480p", "720p", "1080p");
     private readonly Note _vcamNote = new();
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 1000 };
@@ -77,6 +92,10 @@ internal sealed class MainForm : Form
         _wmPositionRow = new Row("Position", _wmPosition);
         _wmSizeRow = new Row("Size", _wmSize);
         _wmOpacityRow = new Row("Opacity", _wmOpacity);
+        _noiseRow = new Row("Noise reduction", _noiseSwitch, stretch: false);
+        _micDeviceRow = new Row("Send to", _micDevice);
+        _micLevelRow = new Row("Level", _micLevel);
+        _getCableRow = new Row("Virtual mic driver", _getCable);
 
         ApplySettingsToControls();
         var (_, w, h) = OutputSizes[_outputSize.SelectedIndex];
@@ -86,6 +105,7 @@ internal sealed class MainForm : Form
         WireEvents();
 
         RecreateVirtualCamera();
+        InitMic();
         UpdateWatermarkUi();
         UpdateOverlay();
         _link.Start();
@@ -113,6 +133,14 @@ internal sealed class MainForm : Form
         camera.Controls.Add(new Row("Resolution", _resolution));
         camera.Controls.Add(new Row("Quality", _quality));
 
+        var microphone = new Card("Microphone");
+        microphone.Controls.Add(new Row("Use iPhone microphone", _micSwitch, stretch: false));
+        microphone.Controls.Add(_noiseRow);
+        microphone.Controls.Add(_micDeviceRow);
+        microphone.Controls.Add(_micLevelRow);
+        microphone.Controls.Add(_getCableRow);
+        microphone.Controls.Add(_micNote);
+
         var picture = new Card("Picture");
         picture.Controls.Add(new Row("Follow phone rotation", _autoRotate, stretch: false));
         picture.Controls.Add(_orientationNote);
@@ -133,7 +161,7 @@ internal sealed class MainForm : Form
 
         _header.Margin = new Padding(Ui.S(4), 0, 0, Ui.S(16));
         side.Controls.Add(_header);
-        foreach (var card in new Control[] { camera, picture, watermark, webcam })
+        foreach (var card in new Control[] { camera, microphone, picture, watermark, webcam })
         {
             card.Margin = new Padding(0, 0, 0, Ui.S(12));
             side.Controls.Add(card);
@@ -163,6 +191,8 @@ internal sealed class MainForm : Form
         _framing.SelectedIndex = s.Fill ? 0 : 1;
         _mirrorSwitch.Checked = s.Mirror;
         _outputSize.SelectedIndex = s.OutputSize;
+        _micSwitch.Checked = s.MicEnabled;
+        _noiseSwitch.Checked = s.MicNoiseReduction;
         _wmPosition.SelectedIndex = s.WatermarkPosition;
         _wmSize.Value = s.WatermarkSize;
         _wmOpacity.Value = s.WatermarkOpacity;
@@ -185,6 +215,9 @@ internal sealed class MainForm : Form
         s.Fill = _framing.SelectedIndex == 0;
         s.Mirror = _mirrorSwitch.Checked;
         s.OutputSize = _outputSize.SelectedIndex;
+        s.MicEnabled = _micSwitch.Checked;
+        s.MicNoiseReduction = _noiseSwitch.Checked;
+        s.MicDeviceId = _mic.Device?.Id;
         s.WatermarkEnabled = _wmSwitch.Checked;
         s.WatermarkPosition = _wmPosition.SelectedIndex;
         s.WatermarkSize = _wmSize.Value;
@@ -200,6 +233,27 @@ internal sealed class MainForm : Form
         _resolution.SelectedIndexChanged += (_, _) => SendToPhone("resolution", _resolution.SelectedIndex == 1 ? "1080p" : "720p");
         _quality.SelectedIndexChanged += (_, _) => SendToPhone("quality", Qualities[_quality.SelectedIndex]);
         _autoRotate.CheckedChanged += (_, _) => SendToPhone("autoRotate", _autoRotate.Checked);
+
+        _micSwitch.CheckedChanged += (_, _) =>
+        {
+            SendToPhone("mic", _micSwitch.Checked);
+            _mic.SetEnabled(_micSwitch.Checked);
+            UpdateMicUi();
+        };
+        _noiseSwitch.CheckedChanged += (_, _) => SendToPhone("noiseReduction", _noiseSwitch.Checked);
+        _micDevice.Click += (_, _) => ShowMicDeviceMenu();
+        _getCable.Click += (_, _) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://vb-audio.com/Cable/")
+                    { UseShellExecute = true });
+            }
+            catch (Exception) { /* no browser */ }
+        };
+        _link.AudioReceived += _mic.Write;
+        _mic.FormatChanged += rate => OnUi(() => { _mic.UseSampleRate(rate); UpdateMicUi(); });
+        _meterTimer.Tick += (_, _) => _micLevel.Level = _mic.Enabled ? _mic.Level : 0;
 
         _rotationBox.SelectedIndexChanged += (_, _) => _rotation = _rotationBox.SelectedIndex * 90;
         _framing.SelectedIndexChanged += (_, _) => _fill = _framing.SelectedIndex == 0;
@@ -244,9 +298,12 @@ internal sealed class MainForm : Form
             SendToPhone("resolution", _resolution.SelectedIndex == 1 ? "1080p" : "720p");
             SendToPhone("quality", Qualities[_quality.SelectedIndex]);
             SendToPhone("autoRotate", _autoRotate.Checked);
+            SendToPhone("noiseReduction", _noiseSwitch.Checked);
+            SendToPhone("mic", _micSwitch.Checked);
         }
         else
         {
+            _phoneMicError = null;
             _phoneProblem = null;
             _orientationNote.Text = "";
             lock (_pipelineLock) SendPlaceholder();
@@ -285,6 +342,14 @@ internal sealed class MainForm : Form
                 });
             }
 
+            if (status.TryGetProperty("mic", out var mic) && mic.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                _micSwitch.Checked = mic.GetBoolean();
+            if (status.TryGetProperty("noiseReduction", out var nr) && nr.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                _noiseSwitch.Checked = nr.GetBoolean();
+            if (status.TryGetProperty("micError", out var me))
+                _phoneMicError = string.IsNullOrEmpty(me.GetString()) ? null : me.GetString();
+            UpdateMicUi();
+
             _phoneProblem = null;
             if (status.TryGetProperty("error", out var err) && !string.IsNullOrEmpty(err.GetString()))
                 _phoneProblem = err.GetString();
@@ -296,6 +361,94 @@ internal sealed class MainForm : Form
         {
             _applyingPhoneStatus = false;
         }
+    }
+
+    // ───────────────────────────── Microphone ─────────────────────────────
+
+    private void InitMic()
+    {
+        var devices = _mic.PlaybackDevices();
+        var device = devices.FirstOrDefault(d => d.Id == _settings.MicDeviceId) ?? devices.FirstOrDefault(d => d.IsVirtualCable);
+        _mic.SetDevice(device);
+        _mic.SetEnabled(_micSwitch.Checked);
+        _meterTimer.Start();
+        UpdateMicUi();
+    }
+
+    private void ShowMicDeviceMenu()
+    {
+        var menu = new ContextMenuStrip { Renderer = new DarkMenuRenderer(), Font = Ui.Body, ShowImageMargin = true };
+        var devices = _mic.PlaybackDevices();
+        if (devices.Count == 0) menu.Items.Add(new ToolStripMenuItem("No playback devices found") { Enabled = false });
+        foreach (var device in devices)
+        {
+            var item = new ToolStripMenuItem(device.IsVirtualCable ? device.Name + "  (recommended)" : device.Name)
+            {
+                Checked = device.Id == _mic.Device?.Id,
+                ForeColor = Ui.Text,
+            };
+            item.Click += (_, _) =>
+            {
+                _mic.SetDevice(device);
+                UpdateMicUi();
+            };
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(_micDevice, new Point(0, _micDevice.Height + Ui.S(4)));
+    }
+
+    private void UpdateMicUi()
+    {
+        bool on = _micSwitch.Checked;
+        var device = _mic.Device;
+        ShowInCard(_noiseRow, on);
+        ShowInCard(_micDeviceRow, on);
+        ShowInCard(_micLevelRow, on);
+        ShowInCard(_getCableRow, on && device is null);
+        _micDevice.Text = device?.Name ?? "Choose…";
+
+        string text;
+        Color color = Ui.Muted;
+        if (!on)
+        {
+            text = "Use the iPhone as your microphone in Teams, Zoom and other apps.";
+        }
+        else if (_phoneMicError != null)
+        {
+            text = _phoneMicError;
+            color = Ui.Error;
+        }
+        else if (_mic.Error != null)
+        {
+            text = _mic.Error;
+            color = Ui.Error;
+        }
+        else if (device is null)
+        {
+            text = "Install the free VB-CABLE driver (admin rights needed). PhoneCam finds it automatically, then pick “CABLE Output” as the microphone in Teams.";
+        }
+        else if (!device.IsVirtualCable)
+        {
+            text = "Playing to this device, so you'll hear yourself. Teams can only use the iPhone mic through VB-CABLE.";
+            color = Ui.Error;
+        }
+        else
+        {
+            text = "In Teams or Zoom, choose the microphone “CABLE Output (VB-Audio Virtual Cable)”.";
+        }
+        _micNote.TextColor = color;
+        _micNote.Text = text;
+    }
+
+    /// <summary>Picks up VB-CABLE once it's installed, without restarting PhoneCam.</summary>
+    private void CheckForVirtualCable()
+    {
+        if (_mic.Device != null || ++_cableCheckTick % 3 != 0) return;
+        var cable = _mic.FindVirtualCable();
+        if (cable is null) return;
+        _mic.SetDevice(cable);
+        UpdateMicUi();
     }
 
     // ───────────────────────────── Watermark ─────────────────────────────
@@ -477,6 +630,7 @@ internal sealed class MainForm : Form
         _fps = frames - _lastFrameCount;
         _lastFrameCount = frames;
         UpdateOverlay();
+        CheckForVirtualCable();
 
         if (_vcamError != null)
         {
@@ -530,7 +684,9 @@ internal sealed class MainForm : Form
     {
         SaveSettings();
         _uiTimer.Stop();
+        _meterTimer.Stop();
         _link.Dispose();
+        _mic.Dispose();
         lock (_pipelineLock)
         {
             _vcam?.Dispose();
@@ -545,6 +701,7 @@ internal sealed class MainForm : Form
         {
             lock (_pipelineLock) _renderer.Dispose();
             _uiTimer.Dispose();
+            _meterTimer.Dispose();
             _preview.Image?.Dispose();
             _watermark?.Dispose();
         }

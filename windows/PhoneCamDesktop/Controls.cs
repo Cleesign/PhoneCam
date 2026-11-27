@@ -365,6 +365,81 @@ internal sealed class Slider : UiControl
     }
 }
 
+/// <summary>Thin audio level bar.</summary>
+internal sealed class LevelMeter : UiControl
+{
+    private float _level;
+
+    public LevelMeter()
+    {
+        Height = Ui.S(8);
+    }
+
+    /// <summary>0–1 (peak). Shown on a speech-friendly curve so normal talking fills about half.</summary>
+    public float Level
+    {
+        get => _level;
+        set
+        {
+            value = Math.Clamp(value, 0f, 1f);
+            if (Math.Abs(value - _level) < 0.005f) return;
+            _level = value;
+            Invalidate();
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = Begin(e);
+        var track = new RectangleF(0, 0, Width - 1, Height - 1);
+        Ui.FillRound(g, track, track.Height / 2, Ui.Track);
+        float shown = (float)Math.Sqrt(_level);
+        if (shown <= 0.01f) return;
+        var fill = new RectangleF(0, 0, Math.Max(track.Height, track.Width * shown), track.Height);
+        Ui.FillRound(g, fill, fill.Height / 2, _level > 0.9f ? Ui.Live : Ui.Ok);
+    }
+}
+
+/// <summary>Dark styling for drop-down menus.</summary>
+internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
+{
+    public DarkMenuRenderer() : base(new DarkColors()) { RoundedEdges = false; }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        e.TextColor = e.Item.Enabled ? Ui.Text : Ui.Muted;
+        base.OnRenderItemText(e);
+    }
+
+    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+    {
+        var g = e.Graphics;
+        Ui.HighQuality(g);
+        var r = e.ImageRectangle;
+        float d = Ui.S(7);
+        using var b = new SolidBrush(Ui.Text);
+        g.FillEllipse(b, r.X + (r.Width - d) / 2, r.Y + (r.Height - d) / 2, d, d);
+    }
+
+    private sealed class DarkColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Ui.Card;
+        public override Color ImageMarginGradientBegin => Ui.Card;
+        public override Color ImageMarginGradientMiddle => Ui.Card;
+        public override Color ImageMarginGradientEnd => Ui.Card;
+        public override Color MenuBorder => Ui.Border;
+        public override Color MenuItemBorder => Ui.TrackHover;
+        public override Color MenuItemSelected => Ui.TrackHover;
+        public override Color MenuItemSelectedGradientBegin => Ui.TrackHover;
+        public override Color MenuItemSelectedGradientEnd => Ui.TrackHover;
+        public override Color SeparatorDark => Ui.Border;
+        public override Color SeparatorLight => Ui.Border;
+        public override Color CheckBackground => Ui.Card;
+        public override Color CheckSelectedBackground => Ui.TrackHover;
+        public override Color CheckPressedBackground => Ui.TrackHover;
+    }
+}
+
 /// <summary>Wrapped, muted text that sizes its height to fit.</summary>
 internal sealed class Note : UiControl
 {

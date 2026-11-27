@@ -14,6 +14,7 @@ internal sealed class PhoneLink : IDisposable
 
     private const byte TypeFrame = 0x01;
     private const byte TypeStatus = 0x02;
+    private const byte TypeAudio = 0x03;
     private const byte TypeCommand = 0x10;
 
     /// <summary>Human-readable connection state. Raised on a background thread.</summary>
@@ -24,6 +25,8 @@ internal sealed class PhoneLink : IDisposable
     public event Action<byte[]>? FrameReceived;
     /// <summary>Status JSON from the phone. Raised on a background thread.</summary>
     public event Action<JsonElement>? StatusReceived;
+    /// <summary>Microphone audio from the phone. Raised on the receive thread — handle it quickly.</summary>
+    public event Action<byte[]>? AudioReceived;
 
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
@@ -137,6 +140,9 @@ internal sealed class PhoneLink : IDisposable
             {
                 case TypeFrame:
                     FrameReceived?.Invoke(payload);
+                    break;
+                case TypeAudio:
+                    AudioReceived?.Invoke(payload);
                     break;
                 case TypeStatus:
                     using (var doc = JsonDocument.Parse(payload))

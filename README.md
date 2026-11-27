@@ -90,6 +90,7 @@ In Xcode, go to *Signing & Capabilities* and pick your Team. Change the bundle i
 
 Tips:
 - **Auto-rotate** is on by default (on the phone and as *Follow phone rotation* in the Windows app). The phone reads its motion sensors (gyroscope and accelerometer) and turns the picture so you stay upright, whichever way it's held. The virtual webcam always stays 16:9 landscape: a portrait-held phone is cropped to the middle band (*Fill frame*) or shown with black side bars (*Fit whole image*). This works even with Portrait Orientation Lock on. When the phone lies flat, it keeps the last orientation.
+- **iPhone microphone:** Windows needs a virtual audio device for this. Install the free [VB-CABLE](https://vb-audio.com/Cable/) driver once (admin rights needed). Then, in the Windows app, turn on *Use iPhone microphone*; PhoneCam sends the phone's audio to "CABLE Input" (it finds the driver automatically). In Teams or Zoom, choose the microphone **"CABLE Output (VB-Audio Virtual Cable)"**. *Noise reduction* uses Apple's voice processing on the phone. The mic only runs while the PC is connected, and you can also switch it with the Mic button on the phone.
 - **Watermark:** in the Windows app, turn on *Show watermark* and choose a PNG (transparency is kept) or JPG. Pick a corner or the centre, then set its size (5–60 % of the frame width) and opacity. It's drawn into the webcam picture itself, so everyone in the call sees it. It isn't affected by *Mirror*, but apps that mirror your own self-view will show it reversed to you only.
 - The Windows app remembers your choices in `%AppData%\PhoneCam\settings.json`.
 - Use **Extra rotation** only if the picture is still wrong, or when auto-rotate is off (then 0° suits a landscape mount with the back camera).
@@ -105,8 +106,9 @@ Each message, in either direction, is `[UInt32 big-endian payload length][UInt8 
 | Type | Direction | Payload |
 |---|---|---|
 | `0x01` | phone → PC | JPEG frame, unmirrored. Upright when auto-rotate is on (portrait-shaped when the phone is held upright); native sensor orientation when it's off |
-| `0x02` | phone → PC | JSON status: `{"camera":"back","resolution":"720p","quality":0.6,"cameraAuthorized":true,"autoRotate":true,"orientation":"portrait","error":""}`. `orientation` is one of `portrait`, `portraitUpsideDown`, `landscapeLeft` (top edge pointing left), `landscapeRight` |
-| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true\|false}`, `{"requestStatus":true}` |
+| `0x02` | phone → PC | JSON status: `{"camera":"back","resolution":"720p","quality":0.6,"cameraAuthorized":true,"autoRotate":true,"orientation":"portrait","mic":false,"micLive":false,"noiseReduction":true,"micError":"","error":""}`. `orientation` is one of `portrait`, `portraitUpsideDown`, `landscapeLeft` (top edge pointing left), `landscapeRight` |
+| `0x03` | phone → PC | Microphone audio: `[UInt32 BE sample rate][UInt8 channels][UInt8 0][Int16 LE PCM]`, 48 kHz mono, about every 20 ms. It isn't throttled by the video back-pressure |
+| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true\|false}`, `{"mic":true\|false}`, `{"noiseReduction":true\|false}`, `{"requestStatus":true}` |
 
 The PC reaches the phone through usbmux's `Connect` request (plist protocol v1 on `127.0.0.1:27015`, port in network byte order). This is the same mechanism Xcode and iTunes use. The phone drops frames instead of queuing them when the PC falls behind, which keeps latency low.
 

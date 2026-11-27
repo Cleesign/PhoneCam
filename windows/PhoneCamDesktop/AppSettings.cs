@@ -14,6 +14,10 @@ internal sealed class AppSettings
     public bool Mirror { get; set; }
     public int OutputSize { get; set; } = 1;      // 0 = 480p, 1 = 720p, 2 = 1080p
 
+    public bool MicEnabled { get; set; }
+    public bool MicNoiseReduction { get; set; } = true;
+    public string? MicDeviceId { get; set; }
+
     public bool WatermarkEnabled { get; set; }
     public string? WatermarkPath { get; set; }
     public int WatermarkPosition { get; set; } = (int)PhoneCamDesktop.WatermarkPosition.BottomRight;
