@@ -78,7 +78,7 @@ struct ContentView: View {
             }
 
             ControlButton(
-                caption: model.autoRotate ? "Auto-rotate" : "Locked",
+                caption: model.autoRotate ? "Auto" : "Locked",
                 isOn: model.autoRotate,
                 angle: angle,
                 action: { model.setAutoRotate(!model.autoRotate) }
@@ -87,7 +87,7 @@ struct ContentView: View {
             }
 
             ControlButton(
-                caption: "Resolution",
+                caption: "Video",
                 isOn: false,
                 angle: angle,
                 action: { model.toggleResolution() }
@@ -104,6 +104,15 @@ struct ContentView: View {
                 action: { model.cycleQuality() }
             ) {
                 QualityBars(level: model.qualityIndex)
+            }
+
+            ControlButton(
+                caption: model.micOn ? "Mic on" : "Mic off",
+                isOn: model.micOn,
+                angle: angle,
+                action: { model.setMic(!model.micOn) }
+            ) {
+                Image(systemName: model.micOn ? "mic.fill" : "mic.slash")
             }
         }
         .padding(.vertical, 14)
@@ -126,6 +135,10 @@ struct ContentView: View {
         }
         if let error = model.cameraError {
             return Message(icon: "exclamationmark.triangle", title: "Camera unavailable", detail: error)
+        }
+        if let error = model.micError {
+            return Message(icon: "mic.slash", title: "Microphone", detail: error,
+                           showsSettingsButton: error.contains("Settings"))
         }
         if !model.laptopConnected {
             return Message(icon: "cable.connector",

@@ -10,6 +10,7 @@ import Network
 /// Wire format, both directions:  [UInt32 big-endian payload length][UInt8 type][payload]
 ///   0x01  phone → PC   JPEG frame
 ///   0x02  phone → PC   status (JSON)
+///   0x03  phone → PC   microphone audio: [UInt32 BE sample rate][UInt8 channels][UInt8 0][Int16 LE PCM]
 ///   0x10  PC → phone   command (JSON), e.g. {"camera":"front"}
 final class StreamServer {
     static let port: UInt16 = 5858
@@ -17,6 +18,7 @@ final class StreamServer {
     enum MessageType: UInt8 {
         case jpegFrame = 0x01
         case status = 0x02
+        case audio = 0x03
         case command = 0x10
     }
 
@@ -35,6 +37,11 @@ final class StreamServer {
 
     /// True when a laptop is connected and the send queue isn't backed up.
     /// Frames are dropped (rather than queued) when this is false, which keeps latency low.
+    var isClientConnected: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return hasClient
+    }
+
     var canAcceptFrame: Bool {
         lock.lock(); defer { lock.unlock() }
         return hasClient && inFlight < 2
@@ -125,12 +132,14 @@ final class StreamServer {
 
     // MARK: - Sending
 
-    func send(type: MessageType, payload: Data) {
-        lock.lock(); inFlight += 1; lock.unlock()
+    /// `tracked` messages count towards the video back-pressure; small audio packets don't,
+    /// so the microphone never makes the camera drop frames (or the other way round).
+    func send(type: MessageType, payload: Data, tracked: Bool = true) {
+        if tracked { lock.lock(); inFlight += 1; lock.unlock() }
 
         queue.async {
             guard let connection = self.client else {
-                self.finishSend()
+                if tracked { self.finishSend() }
                 return
             }
             var packet = Data(capacity: payload.count + 5)
@@ -143,7 +152,7 @@ final class StreamServer {
             packet.append(payload)
 
             connection.send(content: packet, completion: .contentProcessed { [weak self] error in
-                self?.finishSend()
+                if tracked { self?.finishSend() }
                 if error != nil { connection.cancel() }
             })
         }

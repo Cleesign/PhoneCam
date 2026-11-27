@@ -23,6 +23,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: PhoneCam
         INFOPLIST_KEY_NSCameraUsageDescription: "PhoneCam sends the camera image to your computer over the USB cable."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "PhoneCam can send your voice to your computer over the USB cable, to use as a microphone in calls."
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIRequiresFullScreen: YES

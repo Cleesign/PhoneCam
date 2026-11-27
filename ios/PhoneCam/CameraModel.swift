@@ -16,11 +16,19 @@ final class CameraModel: ObservableObject {
     /// How the phone is physically held, from the motion sensors.
     @Published private(set) var heldOrientation: UIDeviceOrientation = .portrait
 
+    /// The user wants the microphone sent to the computer.
+    @Published private(set) var micOn = false
+    @Published private(set) var noiseReduction = true
+    /// True while the microphone is actually running (wanted, allowed, and a computer is connected).
+    @Published private(set) var micLive = false
+    @Published private(set) var micError: String?
+
     /// Quality steps offered by the phone UI (the Windows app uses the same three).
     static let qualitySteps: [(label: String, value: Double)] = [("Low", 0.4), ("Medium", 0.6), ("High", 0.8)]
 
     let streamer = CameraStreamer()
     let server = StreamServer()
+    let mic = MicStreamer()
 
     private let motion = CMMotionManager()
     private var started = false
@@ -31,10 +39,20 @@ final class CameraModel: ObservableObject {
         streamer.shouldSendFrame = { server.canAcceptFrame }
         streamer.frameHandler = { jpeg in server.send(type: .jpegFrame, payload: jpeg) }
 
+        // Audio header: [UInt32 BE sample rate][UInt8 channels][UInt8 reserved]
+        let rate = UInt32(MicStreamer.sampleRate)
+        let audioHeader = Data([UInt8(rate >> 24 & 0xFF), UInt8(rate >> 16 & 0xFF),
+                                UInt8(rate >> 8 & 0xFF), UInt8(rate & 0xFF), 1, 0])
+        mic.chunkHandler = { pcm in
+            guard server.isClientConnected else { return }
+            server.send(type: .audio, payload: audioHeader + pcm, tracked: false)
+        }
+
         server.onClientChanged = { [weak self] connected in
             Task { @MainActor in
                 guard let self else { return }
                 self.laptopConnected = connected
+                self.updateMic() // the mic only runs while a computer is connected
                 if connected { self.sendStatus() }
             }
         }
@@ -101,6 +119,54 @@ final class CameraModel: ObservableObject {
 
     func toggleResolution() {
         select(resolution: resolution == .hd720 ? .hd1080 : .hd720)
+    }
+
+    // MARK: - Microphone
+
+    func setMic(_ on: Bool) {
+        guard on != micOn else { return }
+        micOn = on
+        if on, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { _ in
+                Task { @MainActor in self.updateMic() }
+            }
+            sendStatus()
+            return
+        }
+        updateMic()
+    }
+
+    func setNoiseReduction(_ on: Bool) {
+        guard on != noiseReduction else { return }
+        noiseReduction = on
+        if micLive { micLive = false } // force a restart with the new processing
+        updateMic()
+    }
+
+    /// Starts or stops the microphone to match what's wanted and allowed.
+    private func updateMic() {
+        let authorized = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let shouldRun = micOn && authorized && laptopConnected
+
+        if micOn && !authorized && AVCaptureDevice.authorizationStatus(for: .audio) != .notDetermined {
+            micError = "Microphone access is off. Allow it in Settings › PhoneCam."
+        } else if !micOn {
+            micError = nil
+        }
+
+        if shouldRun && !micLive {
+            micLive = true
+            mic.start(noiseReduction: noiseReduction) { [weak self] error in
+                guard let self else { return }
+                self.micError = error
+                if error != nil { self.micLive = false }
+                self.sendStatus()
+            }
+        } else if !shouldRun && micLive {
+            micLive = false
+            mic.stop()
+        }
+        sendStatus()
     }
 
     func setAutoRotate(_ on: Bool) {
@@ -189,6 +255,12 @@ final class CameraModel: ObservableObject {
         if let on = command["autoRotate"] as? Bool {
             setAutoRotate(on)
         }
+        if let on = command["noiseReduction"] as? Bool {
+            setNoiseReduction(on)
+        }
+        if let on = command["mic"] as? Bool {
+            setMic(on)
+        }
         if command["requestStatus"] != nil {
             sendStatus()
         }
@@ -202,6 +274,10 @@ final class CameraModel: ObservableObject {
             "cameraAuthorized": cameraAuthorized,
             "autoRotate": autoRotate,
             "orientation": heldOrientationName,
+            "mic": micOn,
+            "micLive": micLive,
+            "noiseReduction": noiseReduction,
+            "micError": micError ?? "",
             "error": cameraError ?? ""
         ])
     }
