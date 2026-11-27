@@ -5,6 +5,7 @@ namespace PhoneCamDesktop;
 /// <summary>Remembered choices, stored in %AppData%\PhoneCam\settings.json.</summary>
 internal sealed class AppSettings
 {
+    public bool CameraOn { get; set; } = true;    // false = microphone only
     public int Camera { get; set; }               // 0 = back, 1 = front
     public int Resolution { get; set; }           // 0 = 720p, 1 = 1080p
     public int Quality { get; set; } = 1;         // 0 = low, 1 = medium, 2 = high

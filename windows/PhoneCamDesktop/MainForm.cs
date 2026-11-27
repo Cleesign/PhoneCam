@@ -28,6 +28,7 @@ internal sealed class MainForm : Form
     private volatile int _rotation;
     private volatile bool _mirror;
     private volatile bool _fill;
+    private volatile bool _cameraOff;
 
     private long _frameCount;
     private long _lastFrameCount;
@@ -41,6 +42,7 @@ internal sealed class MainForm : Form
     // UI
     private readonly PreviewView _preview = new() { Dock = DockStyle.Fill };
     private readonly Header _header = new();
+    private readonly ToggleSwitch _cameraSwitch = new();
     private readonly Segmented _camera = new("Back", "Front");
     private readonly Segmented _resolution = new("720p", "1080p");
     private readonly Segmented _quality = new("Low", "Medium", "High");
@@ -129,6 +131,7 @@ internal sealed class MainForm : Form
         side.HandleCreated += (_, _) => NativeUi.DarkScrollbars(side.Handle);
 
         var camera = new Card("Camera");
+        camera.Controls.Add(new Row("Camera on", _cameraSwitch, stretch: false));
         camera.Controls.Add(new Row("Camera", _camera));
         camera.Controls.Add(new Row("Resolution", _resolution));
         camera.Controls.Add(new Row("Quality", _quality));
@@ -183,6 +186,8 @@ internal sealed class MainForm : Form
     private void ApplySettingsToControls()
     {
         var s = _settings;
+        _cameraSwitch.Checked = s.CameraOn;
+        _cameraOff = !s.CameraOn;
         _camera.SelectedIndex = s.Camera;
         _resolution.SelectedIndex = s.Resolution;
         _quality.SelectedIndex = s.Quality;
@@ -207,6 +212,7 @@ internal sealed class MainForm : Form
     private void SaveSettings()
     {
         var s = _settings;
+        s.CameraOn = _cameraSwitch.Checked;
         s.Camera = _camera.SelectedIndex;
         s.Resolution = _resolution.SelectedIndex;
         s.Quality = _quality.SelectedIndex;
@@ -229,6 +235,14 @@ internal sealed class MainForm : Form
 
     private void WireEvents()
     {
+        _cameraSwitch.CheckedChanged += (_, _) =>
+        {
+            SendToPhone("cameraOn", _cameraSwitch.Checked);
+            _cameraOff = !_cameraSwitch.Checked;
+            if (_cameraOff)
+                lock (_pipelineLock) SendPlaceholder();
+            UpdateOverlay();
+        };
         _camera.SelectedIndexChanged += (_, _) => SendToPhone("camera", _camera.SelectedIndex == 1 ? "front" : "back");
         _resolution.SelectedIndexChanged += (_, _) => SendToPhone("resolution", _resolution.SelectedIndex == 1 ? "1080p" : "720p");
         _quality.SelectedIndexChanged += (_, _) => SendToPhone("quality", Qualities[_quality.SelectedIndex]);
@@ -300,6 +314,9 @@ internal sealed class MainForm : Form
             SendToPhone("autoRotate", _autoRotate.Checked);
             SendToPhone("noiseReduction", _noiseSwitch.Checked);
             SendToPhone("mic", _micSwitch.Checked);
+            SendToPhone("cameraOn", _cameraSwitch.Checked);
+            if (_cameraOff)
+                lock (_pipelineLock) SendPlaceholder(); // shows "Camera off" instead of "waiting"
         }
         else
         {
@@ -342,6 +359,8 @@ internal sealed class MainForm : Form
                 });
             }
 
+            if (status.TryGetProperty("cameraOn", out var co) && co.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                _cameraSwitch.Checked = co.GetBoolean();
             if (status.TryGetProperty("mic", out var mic) && mic.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 _micSwitch.Checked = mic.GetBoolean();
             if (status.TryGetProperty("noiseReduction", out var nr) && nr.ValueKind is JsonValueKind.True or JsonValueKind.False)
@@ -537,6 +556,7 @@ internal sealed class MainForm : Form
     /// <summary>Runs on the receive thread, so a slow PC naturally slows the phone down.</summary>
     private void OnFrame(byte[] jpeg)
     {
+        if (_cameraOff) return; // late frames after switching off must not overwrite the "Camera off" frame
         Bitmap? preview = null;
         lock (_pipelineLock)
         {
@@ -590,7 +610,7 @@ internal sealed class MainForm : Form
     /// <summary>Caller holds _pipelineLock. Also shows the placeholder in the preview.</summary>
     private void SendPlaceholder()
     {
-        _renderer.RenderMessage("PhoneCam  ·  waiting for iPhone");
+        _renderer.RenderMessage(_cameraOff && _phoneConnected ? "Camera off" : "PhoneCam  ·  waiting for iPhone");
         var vcam = _vcam;
         if (vcam != null) _renderer.UsePixels(vcam.Send);
         var preview = _renderer.CreatePreview(1280);
@@ -606,9 +626,16 @@ internal sealed class MainForm : Form
 
     private void UpdateOverlay()
     {
-        string badge = _phoneConnected ? $"LIVE  ·  {_fps} fps" : "OFFLINE";
+        string badge = !_phoneConnected ? "OFFLINE"
+            : _cameraOff ? (_micSwitch.Checked ? "MIC ONLY" : "CAMERA OFF")
+            : $"LIVE  ·  {_fps} fps";
         if (!_phoneConnected)
             _preview.SetOverlay(false, badge, "Waiting for your iPhone", _linkState);
+        else if (_cameraOff)
+            _preview.SetOverlay(_micSwitch.Checked, badge, "Camera is off",
+                _micSwitch.Checked
+                    ? "Only your iPhone microphone is being used. Turn the camera back on in the Camera card."
+                    : "Turn the camera back on in the Camera card.");
         else if (_phoneProblem != null)
             _preview.SetOverlay(true, badge, "iPhone camera", _phoneProblem);
         else

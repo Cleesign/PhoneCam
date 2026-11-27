@@ -108,7 +108,7 @@ Each message, in either direction, is `[UInt32 big-endian payload length][UInt8 
 | `0x01` | phone → PC | JPEG frame, unmirrored. Upright when auto-rotate is on (portrait-shaped when the phone is held upright); native sensor orientation when it's off |
 | `0x02` | phone → PC | JSON status: `{"camera":"back","resolution":"720p","quality":0.6,"cameraAuthorized":true,"autoRotate":true,"orientation":"portrait","mic":false,"micLive":false,"noiseReduction":true,"micError":"","error":""}`. `orientation` is one of `portrait`, `portraitUpsideDown`, `landscapeLeft` (top edge pointing left), `landscapeRight` |
 | `0x03` | phone → PC | Microphone audio: `[UInt32 BE sample rate][UInt8 channels][UInt8 0][Int16 LE PCM]`, 48 kHz mono, about every 20 ms. It isn't throttled by the video back-pressure |
-| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true\|false}`, `{"mic":true\|false}`, `{"noiseReduction":true\|false}`, `{"requestStatus":true}` |
+| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true|false}`, `{"cameraOn":true|false}` (false = microphone only), `{"mic":true|false}`\|false}`, `{"mic":true\|false}`, `{"noiseReduction":true\|false}`, `{"requestStatus":true}` |
 
 The PC reaches the phone through usbmux's `Connect` request (plist protocol v1 on `127.0.0.1:27015`, port in network byte order). This is the same mechanism Xcode and iTunes use. The phone drops frames instead of queuing them when the PC falls behind, which keeps latency low.
 
