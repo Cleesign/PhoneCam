@@ -29,6 +29,7 @@ internal sealed class MainForm : Form
     private volatile bool _mirror;
     private volatile bool _fill;
     private volatile bool _cameraOff;
+    private bool _phoneInBackground;
 
     private long _frameCount;
     private long _lastFrameCount;
@@ -321,6 +322,7 @@ internal sealed class MainForm : Form
         else
         {
             _phoneMicError = null;
+            _phoneInBackground = false;
             _phoneProblem = null;
             _orientationNote.Text = "";
             lock (_pipelineLock) SendPlaceholder();
@@ -359,6 +361,14 @@ internal sealed class MainForm : Form
                 });
             }
 
+            if (status.TryGetProperty("background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && bg.GetBoolean() != _phoneInBackground)
+            {
+                _phoneInBackground = bg.GetBoolean();
+                // iOS stops the camera in the background: replace the frozen last frame.
+                if (_phoneInBackground && !_cameraOff)
+                    lock (_pipelineLock) SendPlaceholder();
+            }
             if (status.TryGetProperty("cameraOn", out var co) && co.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 _cameraSwitch.Checked = co.GetBoolean();
             if (status.TryGetProperty("mic", out var mic) && mic.ValueKind is JsonValueKind.True or JsonValueKind.False)
@@ -610,7 +620,11 @@ internal sealed class MainForm : Form
     /// <summary>Caller holds _pipelineLock. Also shows the placeholder in the preview.</summary>
     private void SendPlaceholder()
     {
-        _renderer.RenderMessage(_cameraOff && _phoneConnected ? "Camera off" : "PhoneCam  ·  waiting for iPhone");
+        _renderer.RenderMessage(
+            !_phoneConnected ? "PhoneCam  ·  waiting for iPhone"
+            : _cameraOff ? "Camera off"
+            : _phoneInBackground ? "Camera paused"
+            : "PhoneCam");
         var vcam = _vcam;
         if (vcam != null) _renderer.UsePixels(vcam.Send);
         var preview = _renderer.CreatePreview(1280);
@@ -626,11 +640,16 @@ internal sealed class MainForm : Form
 
     private void UpdateOverlay()
     {
+        bool videoStopped = _cameraOff || _phoneInBackground;
         string badge = !_phoneConnected ? "OFFLINE"
-            : _cameraOff ? (_micSwitch.Checked ? "MIC ONLY" : "CAMERA OFF")
+            : videoStopped ? (_micSwitch.Checked ? "MIC ONLY" : _cameraOff ? "CAMERA OFF" : "PAUSED")
             : $"LIVE  ·  {_fps} fps";
         if (!_phoneConnected)
             _preview.SetOverlay(false, badge, "Waiting for your iPhone", _linkState);
+        else if (_phoneInBackground && !_cameraOff)
+            _preview.SetOverlay(_micSwitch.Checked, badge, "Camera paused",
+                (_micSwitch.Checked ? "The microphone keeps working. " : "") +
+                "iOS pauses the camera while PhoneCam is in the background. Open the app on your iPhone to continue.");
         else if (_cameraOff)
             _preview.SetOverlay(_micSwitch.Checked, badge, "Camera is off",
                 _micSwitch.Checked

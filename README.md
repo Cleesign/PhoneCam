@@ -95,7 +95,8 @@ Tips:
 - The Windows app remembers your choices in `%AppData%\PhoneCam\settings.json`.
 - Use **Extra rotation** only if the picture is still wrong, or when auto-rotate is off (then 0° suits a landscape mount with the back camera).
 - Leave **Mirror** off. Video-call apps mirror your self-view themselves, and other people see you the right way round.
-- The phone app has to stay **open and in the foreground**, because iOS stops the camera in the background. The screen stays on while streaming, and the phone charges over the same cable.
+- **Camera off** (Windows app or the camera button on the phone): microphone only. The phone stops the camera, and Teams sees a dark "Camera off" frame.
+- **In the background:** when you switch to another app on the iPhone, the **microphone keeps working**, but iOS always pauses the camera, so Teams sees "Camera paused" until you reopen PhoneCam. Swiping PhoneCam away in the app switcher quits it and stops everything. Keep the app open in the foreground for video. The screen stays on while streaming, and the phone charges over the same cable.
 
 ---
 
@@ -106,9 +107,9 @@ Each message, in either direction, is `[UInt32 big-endian payload length][UInt8 
 | Type | Direction | Payload |
 |---|---|---|
 | `0x01` | phone → PC | JPEG frame, unmirrored. Upright when auto-rotate is on (portrait-shaped when the phone is held upright); native sensor orientation when it's off |
-| `0x02` | phone → PC | JSON status: `{"camera":"back","resolution":"720p","quality":0.6,"cameraAuthorized":true,"autoRotate":true,"orientation":"portrait","mic":false,"micLive":false,"noiseReduction":true,"micError":"","error":""}`. `orientation` is one of `portrait`, `portraitUpsideDown`, `landscapeLeft` (top edge pointing left), `landscapeRight` |
+| `0x02` | phone → PC | JSON status: `{"camera":"back","resolution":"720p","quality":0.6,"cameraAuthorized":true,"autoRotate":true,"orientation":"portrait","cameraOn":true,"background":false,"mic":false,"micLive":false,"noiseReduction":true,"micError":"","error":""}`. `orientation` is one of `portrait`, `portraitUpsideDown`, `landscapeLeft` (top edge pointing left), `landscapeRight` |
 | `0x03` | phone → PC | Microphone audio: `[UInt32 BE sample rate][UInt8 channels][UInt8 0][Int16 LE PCM]`, 48 kHz mono, about every 20 ms. It isn't throttled by the video back-pressure |
-| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true|false}`, `{"cameraOn":true|false}` (false = microphone only), `{"mic":true|false}`\|false}`, `{"mic":true\|false}`, `{"noiseReduction":true\|false}`, `{"requestStatus":true}` |
+| `0x10` | PC → phone | JSON command, any of: `{"camera":"front"\|"back"}`, `{"resolution":"720p"\|"1080p"}`, `{"quality":0.1–1.0}`, `{"autoRotate":true\|false}`, `{"cameraOn":true\|false}` (false = microphone only), `{"mic":true\|false}`, `{"noiseReduction":true\|false}`, `{"requestStatus":true}` |
 
 The PC reaches the phone through usbmux's `Connect` request (plist protocol v1 on `127.0.0.1:27015`, port in network byte order). This is the same mechanism Xcode and iTunes use. The phone drops frames instead of queuing them when the PC falls behind, which keeps latency low.
 
