@@ -19,6 +19,8 @@ final class CameraModel: ObservableObject {
     /// The user wants the microphone sent to the computer.
     /// Off = microphone-only: the camera is fully stopped (no video, less battery).
     @Published private(set) var cameraOn = true
+    /// The app is in the background: iOS pauses the camera, the microphone keeps running.
+    @Published private(set) var inBackground = false
     @Published private(set) var micOn = false
     @Published private(set) var noiseReduction = true
     /// True while the microphone is actually running (wanted, allowed, and a computer is connected).
@@ -60,6 +62,18 @@ final class CameraModel: ObservableObject {
         }
         server.onCommand = { [weak self] command in
             Task { @MainActor in self?.apply(command) }
+        }
+
+        // A phone call, Siri or an alarm interrupts the microphone; restart it afterwards.
+        NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
+                                               object: nil, queue: .main) { [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let ended = raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .ended
+            Task { @MainActor in self?.audioInterruption(ended: ended) }
+        }
+        NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.audioInterruption(ended: true) }
         }
     }
 
@@ -235,6 +249,19 @@ final class CameraModel: ObservableObject {
         }
     }
 
+    /// Called when the app moves to or from the background (not for the brief app-switcher view).
+    func setInBackground(_ background: Bool) {
+        guard background != inBackground else { return }
+        inBackground = background
+        sendStatus()
+    }
+
+    private func audioInterruption(ended: Bool) {
+        guard ended, micLive else { return }
+        micLive = false // the system stopped the engine; start it again
+        updateMic()
+    }
+
     func setCameraOn(_ on: Bool) {
         guard on != cameraOn else { return }
         cameraOn = on
@@ -296,6 +323,7 @@ final class CameraModel: ObservableObject {
             "autoRotate": autoRotate,
             "orientation": heldOrientationName,
             "cameraOn": cameraOn,
+            "background": inBackground,
             "mic": micOn,
             "micLive": micLive,
             "noiseReduction": noiseReduction,

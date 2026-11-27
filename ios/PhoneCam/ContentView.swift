@@ -9,6 +9,7 @@ import UIKit
 /// That keeps everything readable when the phone is tilted, even with rotation lock on.
 struct ContentView: View {
     @EnvironmentObject private var model: CameraModel
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Rotation for the controls, accumulated so it always turns the short way round.
     @State private var angle: Double = 0
@@ -76,6 +77,11 @@ struct ContentView: View {
         }
         .onChange(of: model.heldOrientation) { orientation in
             turn(to: Self.targetAngle(for: orientation))
+        }
+        .onChange(of: scenePhase) { phase in
+            // .inactive (app switcher, Control Centre) keeps everything running.
+            if phase == .background { model.setInBackground(true) }
+            if phase == .active { model.setInBackground(false) }
         }
     }
 

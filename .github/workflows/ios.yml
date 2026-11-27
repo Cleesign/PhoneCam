@@ -39,6 +39,13 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      - name: Check Info.plist
+        working-directory: ios
+        run: |
+          plist=build/Build/Products/Release-iphoneos/PhoneCam.app/Info.plist
+          plutil -p "$plist" | grep -A2 UIBackgroundModes | grep -q audio || { echo "UIBackgroundModes audio missing"; exit 1; }
+          plutil -p "$plist" | grep -q NSMicrophoneUsageDescription || { echo "Microphone usage text missing"; exit 1; }
+
       - name: Package .ipa
         working-directory: ios
         run: |

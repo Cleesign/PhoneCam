@@ -9,6 +9,11 @@ targets:
     type: application
     platform: iOS
     sources: [PhoneCam]
+    # Keys Xcode can't generate from build settings. Merged with the generated Info.plist.
+    info:
+      path: PhoneCam/Info.plist
+      properties:
+        UIBackgroundModes: [audio]   # the microphone keeps working when you switch apps
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cleesign.phonecam
