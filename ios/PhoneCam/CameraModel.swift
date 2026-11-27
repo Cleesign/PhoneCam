@@ -17,6 +17,8 @@ final class CameraModel: ObservableObject {
     @Published private(set) var heldOrientation: UIDeviceOrientation = .portrait
 
     /// The user wants the microphone sent to the computer.
+    /// Off = microphone-only: the camera is fully stopped (no video, less battery).
+    @Published private(set) var cameraOn = true
     @Published private(set) var micOn = false
     @Published private(set) var noiseReduction = true
     /// True while the microphone is actually running (wanted, allowed, and a computer is connected).
@@ -233,7 +235,23 @@ final class CameraModel: ObservableObject {
         }
     }
 
+    func setCameraOn(_ on: Bool) {
+        guard on != cameraOn else { return }
+        cameraOn = on
+        if on {
+            if cameraAuthorized { startCamera() } else { sendStatus() }
+        } else {
+            streamer.stop()
+            sendStatus()
+        }
+    }
+
     private func startCamera() {
+        guard cameraOn else {
+            // Remember the choice (camera, resolution); it's applied when the camera is turned back on.
+            sendStatus()
+            return
+        }
         streamer.setQuality(quality)
         streamer.start(position: position, resolution: resolution) { [weak self] ok in
             guard let self else { return }
@@ -261,6 +279,9 @@ final class CameraModel: ObservableObject {
         if let on = command["mic"] as? Bool {
             setMic(on)
         }
+        if let on = command["cameraOn"] as? Bool {
+            setCameraOn(on)
+        }
         if command["requestStatus"] != nil {
             sendStatus()
         }
@@ -274,6 +295,7 @@ final class CameraModel: ObservableObject {
             "cameraAuthorized": cameraAuthorized,
             "autoRotate": autoRotate,
             "orientation": heldOrientationName,
+            "cameraOn": cameraOn,
             "mic": micOn,
             "micLive": micLive,
             "noiseReduction": noiseReduction,

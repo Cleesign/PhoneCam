@@ -19,6 +19,8 @@ struct ContentView: View {
 
             CameraPreview(session: model.streamer.session)
                 .ignoresSafeArea()
+                .opacity(model.cameraOn ? 1 : 0) // don't show the last frozen frame
+                .animation(.easeInOut(duration: 0.25), value: model.cameraOn)
 
             // Soft shading so the controls stay legible on bright scenes.
             VStack(spacing: 0) {
@@ -32,9 +34,22 @@ struct ContentView: View {
             .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                StatusPill(connected: model.laptopConnected)
-                    .rotationEffect(.degrees(angle))
-                    .frame(height: 96)          // room to turn without clipping
+                ZStack {
+                    StatusPill(connected: model.laptopConnected)
+                        .rotationEffect(.degrees(angle))
+
+                    HStack {
+                        Spacer()
+                        RoundIconButton(
+                            systemName: model.cameraOn ? "video.fill" : "video.slash.fill",
+                            isOn: !model.cameraOn,
+                            angle: angle,
+                            action: { model.setCameraOn(!model.cameraOn) }
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .frame(height: 96)          // room to turn without clipping
 
                 Spacer()
 
@@ -144,6 +159,13 @@ struct ContentView: View {
             return Message(icon: "cable.connector",
                            title: "Waiting for your PC",
                            detail: "Connect the USB-C cable and start PhoneCam on Windows.")
+        }
+        if !model.cameraOn {
+            return Message(icon: "video.slash",
+                           title: "Camera is off",
+                           detail: model.micOn
+                               ? "Only your microphone is being sent."
+                               : "Nothing is being sent. Turn on the camera or the mic.")
         }
         return nil
     }
@@ -260,6 +282,36 @@ private struct ControlButton<Icon: View>: View {
             .rotationEffect(.degrees(angle))
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .animation(.easeInOut(duration: 0.2), value: isOn)
+    }
+}
+
+/// Small round glass button (top bar). White when "on" (here: camera off), like the control bar.
+private struct RoundIconButton: View {
+    let systemName: String
+    let isOn: Bool
+    let angle: Double
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isOn ? Color.black : Color.white)
+                .frame(width: 42, height: 42)
+                .background {
+                    if isOn {
+                        Circle().fill(Color.white)
+                    } else {
+                        Circle().fill(.ultraThinMaterial)
+                    }
+                }
+                .rotationEffect(.degrees(angle))
         }
         .buttonStyle(PressableStyle())
         .animation(.easeInOut(duration: 0.2), value: isOn)
